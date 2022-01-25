@@ -273,6 +273,8 @@ const CAMELOT_NOTES: [(&str, &str); 35] = [
 impl Track {
     // Write tags to file
     pub fn write_to_file(&self, info: &AudioFileInfo, config: &TaggerConfig) -> Result<(), Box<dyn Error>> {        
+        let benchmark = timestamp!();
+        
         // Get tag
         let mut tag_wrap = Tag::load_file(&info.path, true)?;
         tag_wrap.set_separators(&config.separators);
@@ -288,6 +290,9 @@ impl Track {
                 mp4.remove_all_artworks();
             }
         }
+
+        info!("[BENCH] write_to_file: get file {}", timestamp!() - benchmark);
+        let benchmark = timestamp!();
 
         let tag = tag_wrap.tag_mut();
         // Set tags
@@ -429,6 +434,17 @@ impl Track {
                 TrackNumber::Custom(n) => tag.set_field(Field::TrackNumber, vec![n.to_string()], config.overwrite),
             }
         }
+
+        // Meta tags (date / success)
+        if config.meta_tags {
+            let time = Local::now();
+            tag.set_raw("1T_TAGGEDDATE", vec![time.format("%Y-%m-%d %H:%M:%S").to_string()], true);
+        }
+
+
+        info!("[BENCH] write_to_file: set normal: {}", timestamp!() - benchmark);
+        let benchmark = timestamp!();
+
         // Album art
         if (config.overwrite || tag.get_art().is_empty()) && self.art.is_some() && config.album_art {
             info!("Downloading art: {:?}", self.art);
@@ -454,11 +470,7 @@ impl Track {
             }
         }
 
-        // Meta tags (date / success)
-        if config.meta_tags {
-            let time = Local::now();
-            tag.set_raw("1T_TAGGEDDATE", vec![time.format("%Y-%m-%d %H:%M:%S").to_string()], true);
-        }
+        info!("[BENCH] write_to_file: download and set art: {}", timestamp!() - benchmark);
 
         // Save
         tag.save_file(&info.path)?;
@@ -518,6 +530,8 @@ pub struct AudioFileInfo {
 impl AudioFileInfo {
     // Load audio file info from path
     pub fn load_file(path: &str, filename_template: Option<Regex>) -> Result<AudioFileInfo, Box<dyn Error>> {
+        let benchmark = timestamp!();
+        
         let tag_wrap = Tag::load_file(&path, true)?;
         let tag = tag_wrap.tag();
         // Get title artist from tag
@@ -554,6 +568,9 @@ impl AudioFileInfo {
 
         // Track number
         let track_number = tag.get_field(Field::TrackNumber).unwrap_or(vec![String::new()])[0].parse().ok();
+        
+        info!("[BENCH] AudioFileInfo::load_file: {}", timestamp!() - benchmark);
+
         Ok(AudioFileInfo {
             format: tag_wrap.format(),
             title,
@@ -1138,6 +1155,7 @@ impl Tagger {
     // Tag single track
     pub fn tag_track(path: &str, tagger_mt: Option<&dyn TrackMatcher>, tagger_st: Option<&mut dyn TrackMatcherST>, config: &TaggerConfig) -> TaggingStatus {
         info!("Tagging: {}", path);
+        let benchmark = timestamp!();
         // Output
         let mut out = TaggingStatus {
             status: TaggingState::Error,
@@ -1208,6 +1226,10 @@ impl Tagger {
         if config.match_duration {
             info.load_duration();
         }
+
+        info!("[BENCH] Load file: {}", timestamp!() - benchmark);
+        let benchmark = timestamp!();
+
         // Match track
         let result = if let Some(tagger) = tagger_mt {
             tagger.match_track(&info, &config)
@@ -1217,6 +1239,10 @@ impl Tagger {
             out.message = Some("No tagger!".to_owned());
             return out;
         };
+
+        info!("[BENCH] Match track (full): {}", timestamp!() - benchmark);
+        let benchmark = timestamp!();
+
         match result {
             Ok(o) => {
                 match o {
@@ -1239,6 +1265,8 @@ impl Tagger {
                 out.message = Some(format!("Error marching track: {}", e));
             }
         }
+
+        info!("[BENCH] Write track (full): {}", timestamp!() - benchmark);
 
         out
     }

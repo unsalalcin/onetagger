@@ -313,6 +313,8 @@ impl BeatportImage {
 // Match track
 impl TrackMatcher for Beatport {
     fn match_track(&self, info: &AudioFileInfo, config: &TaggerConfig) -> Result<Option<(f64, Track)>, Box<dyn Error>> {       
+        let benchmark = timestamp!();
+        
         // Fetch by ID
         if let Some(id) = info.ids.beatport_track_id {
             info!("Fetching by ID: {}", id);
@@ -325,15 +327,26 @@ impl TrackMatcher for Beatport {
             return Ok(Some((1.0, track)));
         }
 
+        info!("[BENCH] BP match by id: {}", timestamp!() - benchmark);
+        let benchmark = timestamp!();
+
         // Search
         let query = format!("{} {}", info.artist()?, MatchingUtils::clean_title(info.title()?));
         for page in 1..config.beatport.max_pages+1 {
             match self.search(&query, page, 25) {
                 Ok(res) => {
+
+                    info!("[BENCH] BP search: {}", timestamp!() - benchmark);
+                    let benchmark = timestamp!();
+
                     // Convert tracks
                     let tracks = res.tracks.iter().map(|t| t.to_track(config.beatport.art_resolution)).collect();
                     // Match
                     if let Some((f, mut track)) = MatchingUtils::match_track(&info, &tracks, &config, true) {
+                        
+                        info!("[BENCH] BP match track: {}", timestamp!() - benchmark);
+                        let benchmark = timestamp!();
+                        
                         let i = tracks.iter().position(|t| t == &track).unwrap();
                         // Data from release
                         if config.catalog_number || config.album_artist {
@@ -346,6 +359,10 @@ impl TrackMatcher for Beatport {
                                 Err(e) => warn!("Beatport failed fetching release for catalog number! {}", e)
                             }
                         }
+
+                        info!("[BENCH] BP fetch_release: {}", timestamp!() - benchmark);
+                        let benchmark = timestamp!();
+
                         // Get style info
                         if config.style && track.styles.is_empty() {
                             info!("Fetching full track for subgenres!");
@@ -357,6 +374,10 @@ impl TrackMatcher for Beatport {
                                 Err(e) => warn!("Beatport failed fetching full track data for subgenres! {}", e)
                             }
                         }
+
+                        info!("[BENCH] BP fetch_track: {}", timestamp!() - benchmark);
+                        let benchmark = timestamp!();
+
                         // Data from API for track number
                         if config.track_number || config.isrc {
                             info!("Fetching track info from API for track number!");
@@ -369,6 +390,8 @@ impl TrackMatcher for Beatport {
                             }
                         }
 
+                        info!("[BENCH] BP fetch_track_embed: {}", timestamp!() - benchmark);
+                        
                         // Apply style config similar way to Discogs
                         let genres = track.genres.clone();
                         let styles = track.styles.clone();
